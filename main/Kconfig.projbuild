@@ -1,0 +1,25 @@
+menu "Target SoC Board Configuration"
+
+    choice TARGET_SOC_CHOICE
+        prompt "Select Target SoC Board"
+        default TARGET_SOC_ESP32C3_SUPERMINI
+        help
+            Choose the target SoC for this build.
+
+        config TARGET_SOC_ESP32C3_SUPERMINI
+            bool "ESP32C3_SUPERMINI"
+
+        config TARGET_SOC_WAVESHARE_ESP32_C3_ZERO
+            bool "WAVESHARE_ESP32_C3_ZERO"
+
+        config TARGET_SOC_ESP32C3_72X40OLED
+            bool "ESP32C3_72X40OLED"
+    endchoice
+
+    config TARGET_SOC_NAME
+        string
+        default "ESP32C3_SUPERMINI" if TARGET_SOC_ESP32C3_SUPERMINI
+        default "WAVESHARE_ESP32_C3_ZERO" if TARGET_SOC_WAVESHARE_ESP32_C3_ZERO
+        default "ESP32C3_72X40OLED" if TARGET_SOC_ESP32C3_72X40OLED
+
+endmenu

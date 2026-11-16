@@ -1,10 +1,14 @@
 dependencies:
-  elrebo-de/onboard_led: ~1.0.6
-  elrebo-de/i2c_master: ~1.1.2
-  elrebo-de/deep_sleep: ~1.2.1
+  elrebo-de/onboard_led: ~1.0.7
+  elrebo-de/i2c_master: ~1.1.5
+  elrebo-de/deep_sleep: ~1.2.4
   elrebo-de/InfluxDB-Client-for-ESP-IDF:
     git: https://github.com/elrebo-de/InfluxDB-Client-for-ESP-IDF.git
     version: 1.0.1
-  elrebo-de/wifi_manager: ~1.4.2
-  elrebo-de/time_sync: ~1.2.0
+  elrebo-de/wifi_manager: ~1.4.3
+  elrebo-de/time_sync: ~1.2.1
+  elrebo-de/http_client: ~1.0.5
+  elrebo-de/generic_nvsflash: ~1.0.23
   elrebo-de/http_config_server: ~1.1.4
+  lvgl/lvgl: ^9.6.0
+  espressif/esp_lvgl_port: ^2.6.0
