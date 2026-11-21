@@ -5,7 +5,7 @@ dependencies:
   elrebo-de/InfluxDB-Client-for-ESP-IDF:
     git: https://github.com/elrebo-de/InfluxDB-Client-for-ESP-IDF.git
     version: 1.0.1
-  elrebo-de/wifi_manager: ~1.4.3
+  elrebo-de/wifi_manager: ~1.4.4
   elrebo-de/time_sync: ~1.2.1
   elrebo-de/http_client: ~1.0.5
   elrebo-de/generic_nvsflash: ~1.0.23

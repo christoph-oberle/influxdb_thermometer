@@ -3,7 +3,7 @@
 
 # InfluxDB Thermometer
 
-The InfluxDB thermometer is an ESP32C3 SoC with a MCP9808 thermometer.
+The InfluxDB thermometer is an ESP32C3 SoC with an MCP9808 thermometer.
 
 * If necessary it opens a configuration on http://192.168.4.1 to set the Wifi credentials (SSID and password) with component elrebo-de/wifi-manager.
 * It connects to Wifi with component elrebo-de/wifi-manager.
@@ -13,11 +13,9 @@ The InfluxDB thermometer is an ESP32C3 SoC with a MCP9808 thermometer.
 * It measures the temperature with the MCP9808 with component elrebo-de/i2c_master.
 * It sends the temperature to an InfluxDB server with component elrebo-de/InfluxDB-Client-for-ESP-IDF.
 * It goes to DeepSleep for 15 minutes with component elrebo-de/deep_sleep.
-* If DeepSleep does not work, it waits for 15 minutes and measures the temperature again.
+* It wakes up after 15 minutes and starts the process again.
 
 ## How to use the program
-
-Before project configuration and build, be sure to set the correct chip target using `idf.py set-target esp32c3`.
 
 ### Hardware Required
 

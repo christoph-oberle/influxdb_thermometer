@@ -37,6 +37,9 @@ static const char *tag = "InfluxDB Thermometer";
 #define LVGL_PALETTE_SIZE      8
 #define LVGL_TASK_MAX_DELAY_MS 500
 #define LVGL_TASK_MIN_DELAY_MS 1000 / CONFIG_FREERTOS_HZ
+
+lv_obj_t * temperaturLabel;
+
 #endif
 
 #ifdef CONFIG_TARGET_SOC_ESP32C3_SUPERMINI
@@ -65,8 +68,6 @@ RTC_DATA_ATTR int bootCount = 0;
 #define DEVICE "ESP32"
 #include "InfluxDbClient.h"
 #include "http_config_server.hpp"
-
-lv_obj_t * temperaturLabel;
 
 OnBoardLed *onBoardLed;
 
@@ -220,10 +221,10 @@ void example_lvgl_demo_ui(lv_display_t *disp)
     lv_obj_set_style_text_color(temperaturLabel, lv_color_white(), LV_PART_MAIN);
 
     // Schriftart auf Montserrat 20 setzen
-    lv_obj_set_style_text_font(temperaturLabel, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(temperaturLabel, &lv_font_montserrat_28, LV_PART_MAIN);
 
     // Label mittig auf dem Bildschirm platzieren
-    lv_obj_set_pos(temperaturLabel, 28+12, 20);
+    lv_obj_set_pos(temperaturLabel, 28+2, 16);
 }
 #endif
 
@@ -232,17 +233,48 @@ extern "C" void app_main(void)
     ESP_LOGI(tag, "Start");
 
     onBoardLed = new OnBoardLed(
-        std::string("onBoardLed"),
-        (gpio_num_t) 8,
-        (uint8_t) 0, // activeLevel
-        500);
+	    #if defined(CONFIG_TARGET_SOC_WAVESHARE_ESP32_C3_ZERO)
+		    std::string("Waveshare ESP32-C3-Zero onBoardLed"),
+		    (gpio_num_t) 10,
+		    std::string("RGB"),
+		    std::string("RMT"),
+		    LED_MODEL_WS2812,
+        #elif defined(CONFIG_TARGET_SOC_ESP32C3_SUPERMINI)
+		    std::string("ESP32-C3 w/ LCD display onBoardLed"),
+		    (gpio_num_t) 8,
+            (uint8_t) 0, // activeLevel
+	    #elif defined(CONFIG_TARGET_SOC_ESP32C3_72X40OLED)
+		    std::string("ESP32-C3 Supermini onBoardLed"),
+		    (gpio_num_t) 8,
+            (uint8_t) 0, // activeLevel
+	    #endif
+		500);
+	onBoardLed->setLedPixelColor(0, 0, 0, 16);
     onBoardLed->setLedState(true);
     onBoardLed->show();
+
+    /* Initialize DeepSleep class */
+    ESP_LOGI(tag, "DeepSleep");
+    DeepSleep deepSleep(
+		std::string("DeepSleep"), // tag
+		&bootCount // Address of int bootCount in RTC_DATA
+    );
+
+    ESP_LOGI(tag, "EnableTimerWakeup");
+    ESP_ERROR_CHECK(deepSleep.EnableTimerWakeup(15, "min"));  // enable wake up after 15 minutes sleep time
 
     Wifi wifi( std::string("WifiManager"), // tag for ESP_LOGx
                std::string("ESP32"),       // ssid_prefix for configuration access point
                std::string("de-DE")        // language for configuration access point
              );
+
+    if(!wifi.IsConnected()) {
+        onBoardLed->setLedState(false);
+        onBoardLed->show();
+
+        ESP_LOGI(tag, "WiFi is not connected -> GoToDeepSleep");
+        deepSleep.GoToDeepSleep(); // go to deep sleep
+    }
 
     // get ConfigServer instance
     HttpConfigServer* configServer = &HttpConfigServer::getInstance();
@@ -469,21 +501,21 @@ extern "C" void app_main(void)
 //        _lock_release(&lvgl_api_lock); //lvgl_port_unlock();
 //    }
 
-    // MCP9808
-    // add the thermometer device to the I2C Master Bus
-    ESP_LOGI(tag, "I2cDevice MCP9808");
-    I2cDevice thermometerDevice(
-        std::string("Thermometer Device"), // tag
-        std::string("Thermometer"), // deviceName
-        (i2c_addr_bit_len_t) I2C_ADDR_BIT_LEN_7, // devAddrLength
-        (uint16_t) 0x18, // deviceAddress (without R/W bit)
-        (uint32_t) 50000 // sclSpeedHz
-        );
-    i2c_master_dev_handle_t thermometerHandle = i2c.AddDevice(&thermometerDevice);
+    // add the MCP9808 thermometer device to the I2C Master Bus
+    ESP_LOGI(tag, "I2cDevice Thermometer Device");
+    i2c_master_dev_handle_t thermometerHandle =
+       i2c.AddDevice(new I2cDevice(
+           std::string("thermometerDevice"), // tag
+           std::string("Thermometer"), // deviceName
+           (i2c_addr_bit_len_t) I2C_ADDR_BIT_LEN_7, // devAddrLength
+           (uint16_t) 0x18, // deviceAddress
+           (uint32_t) 50000 // sclSpeedHz
+           )
+       );
 
     ESP_ERROR_CHECK(i2c_master_probe(i2c.GetHandle(), 0x18, 100));
 
-    float temperature = 0.0;
+   float temperature = 0.0;
     uint8_t set_resolution_buffer[2] = {0x08, 0x03};
     uint8_t request_temperature_buffer = 0x05;
     uint8_t temperature_buffer[2];
@@ -491,13 +523,6 @@ extern "C" void app_main(void)
     //mcp9808
     // Set resolution to 0.0625°C
     ESP_ERROR_CHECK(i2c_master_transmit(thermometerHandle, set_resolution_buffer, 2, -1));
-
-    /* Initialize DeepSleep class */
-    ESP_LOGI(tag, "DeepSleep");
-    DeepSleep deepSleep(
-		std::string("DeepSleep"), // tag
-		&bootCount // Address of int bootCount in RTC_DATA
-    );
 
     ESP_LOGI(tag, "Start InfluxDB client");
     // InfluxDB client instance
@@ -517,8 +542,26 @@ extern "C" void app_main(void)
     sensor.addTag("ip_address", wifi.GetIpAddress().c_str());
 
     char devAddrBuffer[10];
-    sprintf(devAddrBuffer, "0x%2x", thermometerDevice.GetConfig().device_address);
+    sprintf(devAddrBuffer, "0x%2x", i2c.GetDevice("Thermometer")->GetConfig().device_address);
     sensor.addTag("device_address", devAddrBuffer);
+
+    // overwrite value of Parameter 05_Calibration for MCP9808 devices with well-known IP addresses
+    std::string currentCalibration = thermometerCalibration;
+    if(wifi.GetIpAddress().compare("192.168.178.150") == 0) { //Wohnzimmer ESP32C3 Supermini
+        thermometerCalibration = "0.2";
+    }
+    if(wifi.GetIpAddress().compare("192.168.178.145") == 0) { //Schlafzimmer Waveshare ESP32C3 Zero
+        thermometerCalibration = "0.4";
+    }
+    if(wifi.GetIpAddress().compare("192.168.178.116") == 0) { // LCD ESP32C3 72x40 OLED
+        thermometerCalibration = "0.0";
+    }
+    if(wifi.GetIpAddress().compare("192.168.178.166") == 0) { // LCD ESP32C3 72x40 OLED
+        thermometerCalibration = "-0.1";
+    }
+    if(currentCalibration.compare(thermometerCalibration) != 0) {
+        configServer->setStringParameterValue("05_Calibration", thermometerCalibration);
+    }
 
     // Check server connection
     if (client.validateConnection()) {
@@ -527,77 +570,68 @@ extern "C" void app_main(void)
         ESP_LOGI(tag, "InfluxDB connection failed: %s", client.getLastErrorMessage().c_str());
     }
 
-    while(1) {
-        // Read the temperature from MCP9808
-        ESP_ERROR_CHECK(i2c_master_transmit_receive(thermometerHandle, &request_temperature_buffer, 1, temperature_buffer, 2, -1));
-        // wait a moment and read temperature again, because the first measurement is always wrong
-        vTaskDelay(1000 / portTICK_PERIOD_MS); // wait for 1 second
-        // Read the temperature from MCP9808
-        ESP_ERROR_CHECK(i2c_master_transmit_receive(thermometerHandle, &request_temperature_buffer, 1, temperature_buffer, 2, -1));
+    // Read the temperature from MCP9808
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(thermometerHandle, &request_temperature_buffer, 1, temperature_buffer, 2, -1));
+    // wait a moment and read temperature again, because the first measurement is always wrong
+    vTaskDelay(1000 / portTICK_PERIOD_MS); // wait for 1 second
+    // Read the temperature from MCP9808
+    ESP_ERROR_CHECK(i2c_master_transmit_receive(thermometerHandle, &request_temperature_buffer, 1, temperature_buffer, 2, -1));
 
-        temperature_buffer[0] = temperature_buffer[0] & 0x1F; //Clear flag bits
-        if ((temperature_buffer[0] & 0x10) == 0x10){ //TA < 0°C
-            temperature_buffer[0] = temperature_buffer[0] & 0x0F; //Clear SIGN
-            temperature = 256. - (temperature_buffer[0] * 16. + temperature_buffer[1] / 16.);
-        } else //TA > 0°C
-        temperature = (temperature_buffer[0] * 16. + temperature_buffer[1] / 16.);
-        //Temperature = Ambient Temperature (°C)
+    temperature_buffer[0] = temperature_buffer[0] & 0x1F; //Clear flag bits
+    if ((temperature_buffer[0] & 0x10) == 0x10){ //TA < 0°C
+        temperature_buffer[0] = temperature_buffer[0] & 0x0F; //Clear SIGN
+        temperature = 256. - (temperature_buffer[0] * 16. + temperature_buffer[1] / 16.);
+    } else //TA > 0°C
+    temperature = (temperature_buffer[0] * 16. + temperature_buffer[1] / 16.);
+    //Temperature = Ambient Temperature (°C)
 
-        // use calibration value to adjust the measured temperature
-        float calibrationOffset = 0.0;
-        float correctedTemperature = temperature;
+    // use calibration value to adjust the measured temperature
+    float calibrationOffset = 0.0;
+    float correctedTemperature = temperature;
 
-        if(thermometerCalibration != "") {
-            calibrationOffset = std::stof(thermometerCalibration.c_str());
-            correctedTemperature = temperature + calibrationOffset;
-        }
-
-        ESP_LOGI(tag, "Temperature: measured: %f, corrected: %f", temperature, correctedTemperature);
-
-        char buffer[1000];
-        sprintf(buffer, "%8.2f", correctedTemperature);
-
-        // Store measured value into point
-        sensor.clearFields();
-        // Report RSSI of currently connected network
-        sensor.addField("temperature", correctedTemperature);
-        // Print what are we exactly writing
-
-        _lock_acquire(&lvgl_api_lock);
-        lv_label_set_text(temperaturLabel, &buffer[3]);
-        _lock_release(&lvgl_api_lock);
-
-        ESP_LOGI(tag, "writing: %s", client.pointToLineProtocol(sensor).c_str());
-        // If no Wifi signal, try to reconnect it
-        if (!wifi.IsConnected()) {
-            ESP_LOGI(tag, "Wifi connection lost");
-            wifi.RestartStation();
-            // Check server connection
-            if (client.validateConnection()) {
-              ESP_LOGI(tag, "(Re-)Connected to InfluxDB: %s", client.getServerUrl().c_str());
-            } else {
-              ESP_LOGI(tag, "InfluxDB connection failed: %s", client.getLastErrorMessage().c_str());
-            }
-        }
-        // Write point
-        if (!client.writePoint(sensor)) {
-          ESP_LOGI(tag, "InfluxDB write failed: %s", client.getLastErrorMessage().c_str());
-        }
-
-        onBoardLed->setLedState(false);
-        onBoardLed->show();
-
-        bool rc;
-
-        ESP_LOGI(tag, "EnableTimerWakeup");
-        ESP_ERROR_CHECK(deepSleep.EnableTimerWakeup(15, "min"));  // enable wake up after 15 minutes sleep time
-        ESP_LOGI(tag, "GoToDeepSleep");
-        rc = deepSleep.GoToDeepSleep(); // go to deep sleep
-
-        // this statement will not be reached, if GoToDeepSleep is working
-        ESP_LOGI(tag, "GoToDeepSleep did not work! rc=%u", rc);
-
-        vTaskDelay(pdMS_TO_TICKS(15 * 60 * 1000)); // wait for 15 minutes
+    if(thermometerCalibration != "") {
+        calibrationOffset = std::stof(thermometerCalibration.c_str());
+        correctedTemperature = temperature + calibrationOffset;
     }
+
+    ESP_LOGI(tag, "Temperature: measured: %f, corrected: %f", temperature, correctedTemperature);
+
+    char buffer[1000];
+    sprintf(buffer, "%8.1f", correctedTemperature);
+
+    // Store measured value into point
+    sensor.clearFields();
+    // Report RSSI of currently connected network
+    sensor.addField("temperature", correctedTemperature);
+    // Print what are we exactly writing
+
+#ifdef CONFIG_TARGET_SOC_ESP32C3_72X40OLED
+    _lock_acquire(&lvgl_api_lock);
+    lv_label_set_text(temperaturLabel, &buffer[3]);
+    _lock_release(&lvgl_api_lock);
+#endif
+
+    ESP_LOGI(tag, "writing: %s", client.pointToLineProtocol(sensor).c_str());
+    // If no Wifi signal, try to reconnect it
+    if (!wifi.IsConnected()) {
+        ESP_LOGI(tag, "Wifi connection lost");
+        wifi.RestartStation();
+        // Check server connection
+        if (client.validateConnection()) {
+          ESP_LOGI(tag, "(Re-)Connected to InfluxDB: %s", client.getServerUrl().c_str());
+        } else {
+          ESP_LOGI(tag, "InfluxDB connection failed: %s", client.getLastErrorMessage().c_str());
+        }
+    }
+    // Write point
+    if (!client.writePoint(sensor)) {
+        ESP_LOGI(tag, "InfluxDB write failed: %s", client.getLastErrorMessage().c_str());
+    }
+
+    onBoardLed->setLedState(false);
+    onBoardLed->show();
+
+    ESP_LOGI(tag, "GoToDeepSleep");
+    deepSleep.GoToDeepSleep(); // go to deep sleep
 }
   
