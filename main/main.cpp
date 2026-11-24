@@ -529,11 +529,22 @@ extern "C" void app_main(void)
     InfluxDBClient client;
     client.setConnectionParams(influxdbUrl.c_str(), influxdbOrg.c_str(), influxdbBucket.c_str(), influxdbToken.c_str());
 
-    while(!client.validateConnection()) {
+	onBoardLed->setLedPixelColor(0, 0, 16, 0);
+    onBoardLed->setLedState(true);
+    onBoardLed->show();
+
+    for(int i=30; i>0; i--) {
+        if(client.validateConnection()) {
+            break;
+        }
         ESP_LOGI(tag, "InfluxDB connection failed: %s\n", client.getLastErrorMessage().c_str());
         ESP_LOGI(tag, "wait 1 sec. for InfluxDB client connection");
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+
+	onBoardLed->setLedPixelColor(0, 16, 16, 16);
+    onBoardLed->setLedState(true);
+    onBoardLed->show();
 
     // Data point
     Point sensor("temperature");
